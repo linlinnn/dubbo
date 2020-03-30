@@ -145,10 +145,17 @@ public class ZookeeperRegistry extends FailbackRegistry {
         try {
             if (ANY_VALUE.equals(url.getServiceInterface())) {
                 String root = toRootPath();
+                // 订阅所有数据
+                // Java 8 的语法 {@link ConcurrentHashMap#computeIfAbsent}
+                // 第一个参数表示 如果缓存zkListeners中不存在key url
+                // 第二个参数表示 新建一个ConcurrentHashMap并存入zkListeners内，然后返回
                 ConcurrentMap<NotifyListener, ChildListener> listeners = zkListeners.computeIfAbsent(url, k -> new ConcurrentHashMap<>());
+                // zkListener为空，说明是第一次，新建一个listener
                 ChildListener zkListener = listeners.computeIfAbsent(listener, k -> (parentPath, currentChilds) -> {
+                    // 只有触发变更通知时执行
                     for (String child : currentChilds) {
                         child = URL.decode(child);
+                        // 如果存在子节点还未被订阅，说明是新节点，则订阅
                         if (!anyServices.contains(child)) {
                             anyServices.add(child);
                             subscribe(url.setPath(child).addParameters(INTERFACE_KEY, child,
@@ -156,6 +163,7 @@ public class ZookeeperRegistry extends FailbackRegistry {
                         }
                     }
                 });
+                // 创建持久节点，接下来订阅持久节点的直接子节点
                 zkClient.create(root, false);
                 List<String> services = zkClient.addChildListener(root, zkListener);
                 if (CollectionUtils.isNotEmpty(services)) {
@@ -168,6 +176,7 @@ public class ZookeeperRegistry extends FailbackRegistry {
                 }
             } else {
                 List<URL> urls = new ArrayList<>();
+                // 根据URL的类别，获取一组要订阅的路径
                 for (String path : toCategoriesPath(url)) {
                     ConcurrentMap<NotifyListener, ChildListener> listeners = zkListeners.computeIfAbsent(url, k -> new ConcurrentHashMap<>());
                     ChildListener zkListener = listeners.computeIfAbsent(listener, k -> (parentPath, currentChilds) -> ZookeeperRegistry.this.notify(url, k, toUrlsWithEmpty(url, parentPath, currentChilds)));
